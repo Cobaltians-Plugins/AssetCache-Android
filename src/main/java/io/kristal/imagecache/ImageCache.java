@@ -263,7 +263,7 @@ public class ImageCache extends CobaltAbstractPlugin implements Permission.Permi
                 switch(result){
                     case SUCCESS:
                         Log.i(TAG, "Result for " + path + " : SUCCESS");
-                        callbackData.put("root", "file://" + PICTURES_ROOT + "/");
+                        callbackData.put("root", "file://" + PICTURES_ROOT );
                         callbackData.put("status", "success");
                         fragment.sendCallback(mModifyAssetCallback, callbackData);
                         break;
