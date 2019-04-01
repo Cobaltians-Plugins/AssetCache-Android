@@ -1,4 +1,4 @@
-package io.kristal.imagecache;
+package io.kristal.assetCache;
 
 import android.Manifest;
 import android.app.Activity;
@@ -26,7 +26,7 @@ import java.net.URL;
 import io.kristal.permissions.Permission;
 import org.cobaltians.cobalt.fragments.CobaltFragment;
 
-public class ImageCache extends CobaltAbstractPlugin implements Permission.PermissionListener {
+public class AssetCache extends CobaltAbstractPlugin implements Permission.PermissionListener {
 
     // TAG
     private static final String TAG = CobaltAbstractPlugin.class.getSimpleName();
@@ -48,7 +48,7 @@ public class ImageCache extends CobaltAbstractPlugin implements Permission.Permi
      * MEMBERS
      *******************************************************************************************************/
 
-    private static ImageCache sInstance;
+    private static AssetCache sInstance;
 
     /**************************************************************************************
      * CONSTRUCTORS
@@ -56,7 +56,7 @@ public class ImageCache extends CobaltAbstractPlugin implements Permission.Permi
 
     public static CobaltAbstractPlugin getInstance(CobaltPluginWebContainer webContainer) {
         if (sInstance == null) {
-            sInstance = new ImageCache();
+            sInstance = new AssetCache();
         }
 
         return sInstance;

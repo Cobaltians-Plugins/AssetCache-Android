@@ -1,4 +1,4 @@
-package io.kristal.imagecache;
+package io.kristal.assetCache;
 
 import org.junit.Test;
 
