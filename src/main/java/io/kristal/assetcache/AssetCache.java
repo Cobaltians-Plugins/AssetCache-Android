@@ -1,4 +1,4 @@
-package io.kristal.assetCache;
+package io.kristal.assetcache;
 
 import android.Manifest;
 import android.app.Activity;
@@ -22,21 +22,21 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 import io.kristal.permissions.Permission;
 import org.cobaltians.cobalt.fragments.CobaltFragment;
 
-public class AssetCache extends CobaltAbstractPlugin implements Permission.PermissionListener {
+public class AssetCache extends CobaltAbstractPlugin {
 
     // TAG
     private static final String TAG = CobaltAbstractPlugin.class.getSimpleName();
 
     private CobaltFragment fragment;
     private Context context;
-    private String mModifyAssetCallback;
-    private JSONObject dataAsset = new JSONObject();
     private static final int REQUESTCODE_WRITEEXT = 1;
-    private final int SUCCESS = 0;
+    private final int PERMISSION_DENIED = 0;
     private final int NETWORK_ERROR = 1;
     private final int FILENOTFOUND_ERROR = 2;
     private final int WRITE_ERROR = 3;
@@ -65,19 +65,19 @@ public class AssetCache extends CobaltAbstractPlugin implements Permission.Permi
     @Override
     public void onMessage(CobaltPluginWebContainer webContainer, JSONObject message) {
         try {
-            String action = message.getString(Cobalt.kJSAction);
-            dataAsset = message.getJSONObject(Cobalt.kJSData);
-            mModifyAssetCallback = message.getString(Cobalt.kJSCallback);
+            String mAction = message.getString(Cobalt.kJSAction);
+            JSONObject mData =  message.getJSONObject(Cobalt.kJSData);
+            String mCallback = message.getString(Cobalt.kJSCallback);
             fragment = webContainer.getFragment();
             context = webContainer.getActivity();
-            if ("download".equals(action) || "delete".equals(action)) {
+            if ("download".equals(mAction) || "delete".equals(mAction)) {
                 // Ask the permission to read/write files into external storage
                 // jump to "onRequestPermissionResult"
-                PICTURES_ROOT = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES).toString() + "/";
-                Permission.getInstance().requestPermissions((Activity)context, REQUESTCODE_WRITEEXT, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, null, null, this);
+                PICTURES_ROOT = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS).toString() + "/";
+                AsyncTaskAsset async = new AsyncTaskAsset(mAction, mData, mCallback);
             }
             else if (Cobalt.DEBUG) {
-                Log.w(TAG, "onMessage: action '" + action + "' not recognized");
+                Log.w(TAG, "onMessage: action '" + mAction + "' not recognized");
             }
 
         }
@@ -93,72 +93,75 @@ public class AssetCache extends CobaltAbstractPlugin implements Permission.Permi
         }
     }
 
-
-    @Override
-    public void onRequestPermissionResult(int requestCode, String permission, int result) {
-        Log.i(TAG, "requestCode=" + requestCode + ", permission=" + permission + ", result=" + result);
-        switch (permission) {
-            case Manifest.permission.WRITE_EXTERNAL_STORAGE:
-                if (result == GRANTED) {
-                    AsyncTaskAsset async = new AsyncTaskAsset(dataAsset);
-                    async.execute();
-                }
-        }
-    }
-
     //AsyncTask for download/delete asset
-    private final class AsyncTaskAsset extends AsyncTask<JSONObject, Void, Void> {
+    private final class AsyncTaskAsset extends AsyncTask<JSONObject, Void, Void> implements Permission.PermissionListener {
         private JSONObject asset;
-        private String path = new String();
+        private String action;
+        private String callback;
+        String assetUrl = new String();
+        String assetPath = new String();
+        String fileName = new String();
 
-        private AsyncTaskAsset(JSONObject d) {
-            this.asset = d;
+        private AsyncTaskAsset(String a, JSONObject d, String c) { //Action, dataAsset, Callback
+            action = a;
+            asset = d;
+            callback = c;
+            //Retrieving assets information
             try {
-                path = this.asset.getString("path");
+                if (asset.has("url")) {
+                    assetUrl = this.asset.getString("url");
+                    fileName = toMD5(assetUrl);
+                    Log.d(TAG,assetUrl + " is associated with " + fileName);
+                    assetPath = PICTURES_ROOT + fileName;
+                } else if (asset.has("path")){
+                    assetPath = this.asset.getString("path");
+                }
             } catch (JSONException e) {
                 Log.e(TAG, "Error: Unable to retrieve values in the json object");
                 e.printStackTrace();
+            }
+            Permission.getInstance().requestPermissions((Activity)context, REQUESTCODE_WRITEEXT, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, null, null, this);
+        }
+
+        @Override
+        public void onRequestPermissionResult(int requestCode, String permission, int result) {
+            Log.i(TAG, "requestCode=" + requestCode + ", permission=" + permission + ", result=" + result);
+            switch (permission) {
+                case Manifest.permission.WRITE_EXTERNAL_STORAGE:
+                    if (result == GRANTED) {
+                        this.execute();
+                    } else {
+                        onErrorCallback(PERMISSION_DENIED);
+                    }
             }
         }
 
         @Override
         protected Void doInBackground(JSONObject... objects) {
-            if (asset.has("url")) { //event: 'downloadAsset'
+            if ("download".equals(action)) {
                 int count;
-                String strUrl, folderName;
                 URL url;
                 HttpURLConnection connection;
                 int lengthOfFile;
                 InputStream in;
 
-                //Retrieving assets information
+                //Creating URL object
                 try {
-                    strUrl = asset.getString("url");
-                    int i = path.lastIndexOf('/');
-                    if (i == -1)
-                        folderName = "/";
-                    else
-                        folderName = path.substring(0, i);
-                    url = new URL(strUrl);
-                } catch (JSONException e) {
-                    Log.e(TAG, "Error: Unable to retrieve values in the json object");
-                    e.printStackTrace();
-                    onResultCallback(path,UNKNOWN_ERROR);
-                    return null;
+                    url = new URL(assetUrl);
                 } catch (MalformedURLException e) {
                     Log.e(TAG, "Error: Unable to create URL");
                     e.printStackTrace();
-                    onResultCallback(path,UNKNOWN_ERROR);
+                    onErrorCallback(UNKNOWN_ERROR);
                     return null;
                 }
 
-                //Connecting to url
+                //Connecting to URL
                 try {
                     connection = (HttpURLConnection) url.openConnection();
                     int responseCode = connection.getResponseCode();
-                    Log.i(TAG, "Response code: " + responseCode + " on connection to: " + strUrl);
+                    Log.i(TAG, "Response code: " + responseCode + " on connection to: " + url);
                     if (responseCode == 404) {
-                        onResultCallback(path,FILENOTFOUND_ERROR);
+                        onErrorCallback(FILENOTFOUND_ERROR);
                         return null;
                     }
                     connection.connect();
@@ -167,73 +170,60 @@ public class AssetCache extends CobaltAbstractPlugin implements Permission.Permi
                 } catch (IOException e) { // IOException on network
                     Log.e(TAG, "Error: Network error");
                     e.printStackTrace();
-                    onResultCallback(path,NETWORK_ERROR);
+                    onErrorCallback(NETWORK_ERROR);
                     return null;
                 }
 
                 //Downloading and Writing file locally
                 try {
-                    File folder = new File(PICTURES_ROOT + folderName);
-                    boolean success = true;
-                    if (!folder.exists()) {
-                        success = folder.mkdirs();
-                    }
-                    if (!success) {
-                        Log.e(TAG, "Error : Unable to create directories for this path : " + folder.getCanonicalPath());
-                        throw new IOException();
-                    } else {
-                        OutputStream out = new FileOutputStream(PICTURES_ROOT + path);
-                        byte data[] = new byte[1024];
-                        long total = 0;
-                        long startTime = System.currentTimeMillis();
-                        while ((count = in.read(data)) != -1) {
-                            total += count;
-                            if (lengthOfFile < 0) {
-                                lengthOfFile = connection.getContentLength();
-                            } else {
-                                //Sending callback every CALLBACK_DELAY (ms)
-                                long currentTime = System.currentTimeMillis();
-                                if (currentTime - startTime > CALLBACK_DELAY) {
-                                    onProgressCallback((int) ((total * 100) / lengthOfFile));
-                                    startTime = currentTime;
-                                }
+                    OutputStream out = new FileOutputStream(assetPath);
+                    byte data[] = new byte[1024];
+                    long total = 0;
+                    long startTime = System.currentTimeMillis();
+                    while ((count = in.read(data)) != -1) {
+                        total += count;
+                        if (lengthOfFile < 0) {
+                            lengthOfFile = connection.getContentLength();
+                        } else {
+                            //Sending callback every CALLBACK_DELAY (ms)
+                            long currentTime = System.currentTimeMillis();
+                            if (currentTime - startTime > CALLBACK_DELAY) {
+                                onProgressCallback((int) ((total * 100) / lengthOfFile));
+                                startTime = currentTime;
                             }
-                            out.write(data, 0, count);
                         }
-
-                        out.flush();
-                        in.close();
-                        out.close();
+                        out.write(data, 0, count);
                     }
+                    out.flush();
+                    in.close();
+                    out.close();
                 } catch (IOException e) { // IOException for local
                     Log.e(TAG, "Error: Read/Write error");
                     e.printStackTrace();
-                    onResultCallback(path,WRITE_ERROR);
+                    onErrorCallback(WRITE_ERROR);
                     return null;
                 }
-
-                onResultCallback(path,SUCCESS);
-                cancel(true);
-            } else { //event: 'deleteAsset'
+                onSuccessCallback();
+                //cancel(true);
+            } else if ("delete".equals(action)) {
                 try {
-                    File file = new File(PICTURES_ROOT + path);
-
+                    File file = new File(assetPath);
                     if(file.delete()){ // Removing asset
-                        onResultCallback(path,SUCCESS);
+                        onSuccessCallback();
                         return null;
                     } else {
                         // If fails : Error asset does not exist
-                        Log.e(TAG,"Error : Cannot find file on path " + path);
-                        onResultCallback(path,FILENOTFOUND_ERROR);
+                        Log.e(TAG,"Error : Cannot find file on path " + assetPath);
+                        onErrorCallback(FILENOTFOUND_ERROR);
                         return null;
                     }
                 } catch(NullPointerException e){
                     e.printStackTrace();
-                    onResultCallback(path,FILENOTFOUND_ERROR);
+                    onErrorCallback(FILENOTFOUND_ERROR);
                     return null;
                 } catch (Exception e) {
                     e.printStackTrace();
-                    onResultCallback(path,UNKNOWN_ERROR);
+                    onErrorCallback(UNKNOWN_ERROR);
                     return null;
                 }
             }
@@ -243,59 +233,88 @@ public class AssetCache extends CobaltAbstractPlugin implements Permission.Permi
 
         //Sending callback of download's progress
         private void onProgressCallback(Integer progress) {
-            Log.i(TAG, "Downloading... " + path + " : " + progress + "%");
+            Log.i(TAG, "Downloading... " + assetPath + " : " + progress + "%");
             try {
                 JSONObject callbackData = new JSONObject();
-                callbackData.put("path", path);
                 callbackData.put("status", "downloading");
                 callbackData.put("progress", progress);
-                fragment.sendCallback(mModifyAssetCallback, callbackData);
+                fragment.sendCallback(this.callback, callbackData);
             } catch (JSONException exception) {
                 exception.printStackTrace();
             }
         }
 
-        //Sending callbacks, depending on delete/download result
-        private void onResultCallback(String path, int result) {
+        //Sending callbacks on error
+        private void onErrorCallback(int error) {
             try {
                 JSONObject callbackData = new JSONObject();
-                callbackData.put("path", path);
-                switch(result){
-                    case SUCCESS:
-                        Log.i(TAG, "Result for " + path + " : SUCCESS");
-                        callbackData.put("root", "file://" + PICTURES_ROOT );
-                        callbackData.put("status", "success");
-                        fragment.sendCallback(mModifyAssetCallback, callbackData);
-                        break;
+                callbackData.put("status", "error");
+                switch(error){
                     case NETWORK_ERROR:
-                        Log.i(TAG, "Result for " + path + " : NETWORK_ERROR");
-                        callbackData.put("status", "error");
+                        Log.i(TAG, "Result for " + assetPath + " : NETWORK_ERROR");
                         callbackData.put("cause", "networkError");
-                        fragment.sendCallback(mModifyAssetCallback, callbackData);
+                        fragment.sendCallback(this.callback, callbackData);
                         break;
                     case FILENOTFOUND_ERROR:
-                        Log.i(TAG, "Result for " + path + " : FILENOTFOUND_ERROR");
-                        callbackData.put("status", "error");
+                        Log.i(TAG, "Result for " + assetPath + " : FILENOTFOUND_ERROR");
                         callbackData.put("cause", "fileNotFound");
-                        fragment.sendCallback(mModifyAssetCallback, callbackData);
+                        fragment.sendCallback(this.callback, callbackData);
                         break;
                     case WRITE_ERROR:
-                        Log.i(TAG, "Result for " + path + " : WRITE_ERROR");
-                        callbackData.put("status", "error");
+                        Log.i(TAG, "Result for " + assetPath + " : WRITE_ERROR");
                         callbackData.put("cause", "writeError");
-                        fragment.sendCallback(mModifyAssetCallback, callbackData);
+                        fragment.sendCallback(this.callback, callbackData);
                         break;
                     case UNKNOWN_ERROR:
-                        Log.i(TAG, "Result for " + path + " : UNKNOWN_ERROR");
-                        callbackData.put("status", "error");
+                        Log.i(TAG, "Result for " + assetPath + " : UNKNOWN_ERROR");
                         callbackData.put("cause", "unknownError");
-                        fragment.sendCallback(mModifyAssetCallback, callbackData);
+                        fragment.sendCallback(this.callback, callbackData);
+                        break;
+                    case PERMISSION_DENIED:
+                        Log.i(TAG, "Result for " + assetPath + " : PERMISSION_DENIED");
+                        callbackData.put("cause", "permissionDenied");
+                        fragment.sendCallback(this.callback, callbackData);
                         break;
                 }
             } catch (JSONException exception) {
                 exception.printStackTrace();
             }
         }
+
+        //Sending callbacks on success
+        private void onSuccessCallback() {
+            try {
+                JSONObject callbackData = new JSONObject();
+                Log.i(TAG, "Result for " + assetPath + " : SUCCESS");
+                if ("download".equals(action)) {
+                    callbackData.put("path", assetPath);
+                }
+                callbackData.put("status", "success");
+                fragment.sendCallback(this.callback, callbackData);
+            } catch (JSONException exception) {
+                exception.printStackTrace();
+            }
+        }
+
+        public String toMD5(String s) {
+            try {
+                // Create MD5 Hash
+                MessageDigest md = MessageDigest.getInstance("MD5");
+                md.update(s.getBytes());
+                byte digest[] = md.digest();
+
+                // Create Hex String
+                StringBuffer hexString = new StringBuffer();
+                for (int i=0; i<digest.length; i++) {
+                    hexString.append(Integer.toHexString(0xFF & digest[i]));
+                }
+                return hexString.toString().toUpperCase();
+            }catch (NoSuchAlgorithmException e) {
+                e.printStackTrace();
+            }
+            return "";
+        }
+
     }
 
 }
