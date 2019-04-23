@@ -83,20 +83,27 @@ public class AssetCache extends CobaltAbstractPlugin {
             return;
         }
         
-        // TODO: check nullability
-        fragment = webContainer.getFragment();
-        context = webContainer.getActivity();
-        if ("download".equals(action) || "delete".equals(action))
-        {
-            // Ask the permission to read/write files into external storage
-            // jump to "onRequestPermissionResult"
-            // TODO: check nullability
-            PICTURES_ROOT = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS).toString() + "/";
-            AsyncTaskAsset async = new AsyncTaskAsset(action, data, callbackChannel);
-        }
-        else if (Cobalt.DEBUG)
-        {
-            Log.w(TAG, "onMessage: action '" + action + "' not recognized");
+        if(webContainer != null && action != null) {
+            fragment = webContainer.getFragment();
+            context = webContainer.getActivity();
+            if ("download".equals(action) || "delete".equals(action)) {
+                // Ask the permission to read/write files into external storage
+                // jump to "onRequestPermissionResult"
+                if(data != null) {
+                    if(callbackChannel != null) {
+                        PICTURES_ROOT = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS).toString() + "/";
+                        AsyncTaskAsset async = new AsyncTaskAsset(action, data, callbackChannel);
+                    } else {
+                        Log.e(TAG, "Error : onMessage callbackChannel is null");
+                    }
+                } else {
+                    Log.e(TAG, "Error : onMessage data is null");
+                }
+            } else if (Cobalt.DEBUG) {
+                Log.w(TAG, "onMessage: action '" + action + "' not recognized");
+            }
+        } else {
+            Log.e(TAG, "Error : onMessage webContainer or action is null");
         }
     }
 
@@ -245,8 +252,7 @@ public class AssetCache extends CobaltAbstractPlugin {
                 JSONObject callbackData = new JSONObject();
                 callbackData.put("status", "downloading");
                 callbackData.put("progress", progress);
-                // TODO: use PubSub on callbackChannel
-                //fragment.sendCallback(this.callback, callbackData);
+                Cobalt.publishMessage(callbackData, callback);
             } catch (JSONException exception) {
                 exception.printStackTrace();
             }
@@ -261,32 +267,27 @@ public class AssetCache extends CobaltAbstractPlugin {
                     case NETWORK_ERROR:
                         Log.i(TAG, "Result for " + assetPath + " : NETWORK_ERROR");
                         callbackData.put("cause", "networkError");
-                        // TODO: use PubSub on callbackChannel
-                        //fragment.sendCallback(this.callback, callbackData);
+                        Cobalt.publishMessage(callbackData, callback);
                         break;
                     case FILENOTFOUND_ERROR:
                         Log.i(TAG, "Result for " + assetPath + " : FILENOTFOUND_ERROR");
                         callbackData.put("cause", "fileNotFound");
-                        // TODO: use PubSub on callbackChannel
-                        //fragment.sendCallback(this.callback, callbackData);
+                        Cobalt.publishMessage(callbackData, callback);
                         break;
                     case WRITE_ERROR:
                         Log.i(TAG, "Result for " + assetPath + " : WRITE_ERROR");
                         callbackData.put("cause", "writeError");
-                        // TODO: use PubSub on callbackChannel
-                        //fragment.sendCallback(this.callback, callbackData);
+                        Cobalt.publishMessage(callbackData, callback);
                         break;
                     case UNKNOWN_ERROR:
                         Log.i(TAG, "Result for " + assetPath + " : UNKNOWN_ERROR");
                         callbackData.put("cause", "unknownError");
-                        // TODO: use PubSub on callbackChannel
-                        //fragment.sendCallback(this.callback, callbackData);
+                        Cobalt.publishMessage(callbackData, callback);
                         break;
                     case PERMISSION_DENIED:
                         Log.i(TAG, "Result for " + assetPath + " : PERMISSION_DENIED");
                         callbackData.put("cause", "permissionDenied");
-                        // TODO: use PubSub on callbackChannel
-                        //fragment.sendCallback(this.callback, callbackData);
+                        Cobalt.publishMessage(callbackData, callback);
                         break;
                 }
             } catch (JSONException exception) {
@@ -303,8 +304,7 @@ public class AssetCache extends CobaltAbstractPlugin {
                     callbackData.put("path", assetPath);
                 }
                 callbackData.put("status", "success");
-                // TODO: use PubSub on callbackChannel
-                //fragment.sendCallback(this.callback, callbackData);
+                Cobalt.publishMessage(callbackData, callback);
             } catch (JSONException exception) {
                 exception.printStackTrace();
             }
