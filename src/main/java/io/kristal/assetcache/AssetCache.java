@@ -27,7 +27,7 @@ import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-import io.kristal.permissions.Permission;
+import org.cobaltians.cobalt.tools.Permission;
 import org.cobaltians.cobalt.fragments.CobaltFragment;
 
 public class AssetCache extends CobaltAbstractPlugin {

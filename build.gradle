@@ -23,6 +23,5 @@ android {
 }
 
 dependencies {
-    api project(':permissions')
     implementation project(':cobalt')
 }
